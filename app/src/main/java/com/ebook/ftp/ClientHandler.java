@@ -1,6 +1,6 @@
 package com.ebook.ftp;
 
-import android.util.Log; // <-- Make sure this import is added
+import android.util.Log;
 
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
@@ -15,16 +15,16 @@ import java.io.OutputStreamWriter;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.SocketException;
-import java.text.SimpleDateFormat; // For LIST format
-import java.util.Date; // For LIST format
-import java.util.Locale; // For LIST format
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.Locale;
 import java.util.StringTokenizer;
-import java.util.TimeZone; // For LIST format
+import java.util.TimeZone;
 
 
 public class ClientHandler implements Runnable {
 
-    // Added a TAG for logging
+
     private static final String TAG = "FTP_ClientHandler";
 
     private Socket controlSocket;
@@ -45,7 +45,7 @@ public class ClientHandler implements Runnable {
         this.controlSocket = clientSocket;
         this.username = username;
         this.password = password;
-        this.rootDir = new File(rootDir).getCanonicalPath(); // Use canonical path for consistency
+        this.rootDir = new File(rootDir).getCanonicalPath();
         this.currentDir = this.rootDir;
 
         reader = new BufferedReader(new InputStreamReader(controlSocket.getInputStream()));
@@ -54,6 +54,22 @@ public class ClientHandler implements Runnable {
         Log.d(TAG, "ClientHandler created for " + clientSocket.getRemoteSocketAddress() + " with root: " + this.rootDir);
     }
 
+    /**
+     * The main execution loop for handling client commands.
+     * This method reads commands from the client, processes them, and sends appropriate responses.
+     * It handles various FTP commands such as USER, PASS, PWD, CWD, PASV, LIST, NLST, RETR,
+     * STOR, QUIT, FEAT, TYPE, SYST, OPTS, SIZE, and NOOP.
+     *
+     * The loop continues until the client disconnects or sends a QUIT command.
+     * It also manages user authentication state and ensures that data connections are
+     * properly handled and closed.
+     *
+     * Exception handling is in place for I/O errors and socket issues, logging them
+     * for debugging purposes.
+     *
+     * Finally, it ensures all resources (sockets, readers, writers) are closed
+     * when the client session ends, either normally or due to an error.
+     */
     @Override
     public void run() {
         try {
@@ -62,8 +78,8 @@ public class ClientHandler implements Runnable {
             String user = null;
 
             try {
-                while ((line = reader.readLine()) != null) { // Check for null to handle disconnects
-                    Log.i(TAG, "CMD: " + line); // Log received command
+                while ((line = reader.readLine()) != null) {
+                    Log.i(TAG, "CMD: " + line);
                     String command = "";
                     String argument = "";
 
@@ -71,10 +87,10 @@ public class ClientHandler implements Runnable {
                     if (tokenizer.hasMoreTokens()) {
                         command = tokenizer.nextToken().toUpperCase();
                         if (tokenizer.hasMoreTokens()) {
+                            // Instead of using tokenizer again, we take a substring from the original line
                             argument = line.substring(command.length()).trim();
                         }
                     } else {
-                        // Handle empty lines if necessary, or just continue
                         continue;
                     }
 
@@ -91,39 +107,46 @@ public class ClientHandler implements Runnable {
                             } else {
                                 Log.w(TAG, "Login incorrect for user: " + user);
                                 sendResponse("530 Login incorrect");
-                                isLoggedIn = false; // Ensure not logged in
+                                isLoggedIn = false;
                             }
                             break;
 
+                            //print working directory
                         case "PWD":
-                        case "XPWD": // Some clients use XPWD
+                        case "XPWD":
                             if (!checkLoggedIn()) break;
+                            // This is done to show the user's path *relative to the root*, not the full system path
                             String displayPath = currentDir.replace(rootDir, "");
                             if (displayPath.isEmpty()) displayPath = "/";
                             sendResponse("257 \"" + displayPath + "\" is the current directory.");
                             break;
 
+                            //change working directory
                         case "CWD":
                             if (!checkLoggedIn()) break;
                             changeWorkingDirectory(argument);
                             break;
 
+                            //passiveMode
                         case "PASV":
                             if (!checkLoggedIn()) break;
                             enterPassiveMode();
                             break;
 
+                            //list directory
                         case "LIST":
                         case "NLST": // Handle NLST too
                             if (!checkLoggedIn()) break;
-                            sendDirectoryListing(argument); // Pass argument (may contain path or options)
+                            sendDirectoryListing(argument);
                             break;
 
+                            //retrieve
                         case "RETR":
                             if (!checkLoggedIn()) break;
                             sendFile(argument);
                             break;
 
+                            //STORe //uplod file to ftp server
                         case "STOR":
                             if (!checkLoggedIn()) break;
                             receiveFile(argument);
@@ -166,7 +189,7 @@ public class ClientHandler implements Runnable {
                             }
                             break;
 
-                        case "SIZE": // Handle SIZE command
+                        case "SIZE":
                             if (!checkLoggedIn()) break;
                             handleSize(argument);
                             break;
@@ -204,7 +227,6 @@ public class ClientHandler implements Runnable {
         }
     }
 
-    // --- Helper to build and validate file paths ---
     private File buildFile(String path) throws IOException {
         String effectivePath;
         File baseDir;
@@ -222,8 +244,7 @@ public class ClientHandler implements Runnable {
         File targetFile = new File(baseDir, effectivePath);
         String canonicalPath = targetFile.getCanonicalPath();
 
-        // Security Check: Ensure the path doesn't go above rootDir.
-        // Also check if rootDir itself is being accessed (which is allowed).
+
         if (!canonicalPath.startsWith(rootDir) && !canonicalPath.equals(rootDir)) {
             Log.w(TAG, "Security Alert: Attempted access outside root: " + canonicalPath + " (Original: " + path + ")");
             throw new IOException("Access denied - Path outside root directory.");
@@ -232,7 +253,6 @@ public class ClientHandler implements Runnable {
         return targetFile;
     }
 
-    // --- File Operations ---
 
     private void receiveFile(String filename) throws IOException {
         if (dataServerSocket == null) {
@@ -279,7 +299,7 @@ public class ClientHandler implements Runnable {
             try (BufferedInputStream in = new BufferedInputStream(dataSocket.getInputStream());
                  FileOutputStream fos = new FileOutputStream(file)) {
 
-                byte[] buffer = new byte[8192]; // Increased buffer size
+                byte[] buffer = new byte[8192];
                 int read;
                 while ((read = in.read(buffer)) != -1) {
                     fos.write(buffer, 0, read);
@@ -301,6 +321,16 @@ public class ClientHandler implements Runnable {
     }
 
 
+    /**
+     * Sends a file to the FTP client in response to the RETR command.
+     *
+     * This method handles file transmission in passive mode. It verifies file validity,
+     * opens the data connection, streams the file's binary content to the client,
+     * and ensures proper FTP status codes are sent during each step of the process.
+     *
+     * @param filename Name or relative path of the file requested by the client.
+     * @throws IOException If any file I/O or socket error occurs during the transfer.
+     */
     private void sendFile(String filename) throws IOException {
         if (dataServerSocket == null) {
             sendResponse("425 Use PASV first");
@@ -337,7 +367,7 @@ public class ClientHandler implements Runnable {
             try (BufferedOutputStream out = new BufferedOutputStream(dataSocket.getOutputStream());
                  FileInputStream fis = new FileInputStream(file)) {
 
-                byte[] buffer = new byte[8192]; // Increased buffer size
+                byte[] buffer = new byte[8192];  // Use 8KB buffer to optimize read/write performance
                 int read;
                 while ((read = fis.read(buffer)) != -1) {
                     out.write(buffer, 0, read);
@@ -359,6 +389,17 @@ public class ClientHandler implements Runnable {
         }
     }
 
+    /**
+     * Sends a directory listing to the client over the data connection.
+     * <p>
+     * This method is invoked in response to an FTP LIST command. It establishes a data connection,
+     * lists the contents of the current directory, formats the information for each file/directory,
+     * and sends it to the client. Appropriate FTP responses are sent for various stages
+     * (e.g., connection opening, transfer completion, errors).
+     *
+     * @param argument The argument provided with the LIST command (currently unused).
+     * @throws IOException If an I/O error occurs on the control connection.
+     */
     private void sendDirectoryListing(String argument) throws IOException {
         if (dataServerSocket == null) {
             sendResponse("425 Use PASV first");
@@ -375,19 +416,19 @@ public class ClientHandler implements Runnable {
 
             // SimpleDateFormat for standard LIST format
             SimpleDateFormat sdf = new SimpleDateFormat("MMM dd HH:mm", Locale.US);
-            sdf.setTimeZone(TimeZone.getDefault()); // Use server's timezone
+            sdf.setTimeZone(TimeZone.getDefault());
 
             if (files != null) {
                 Log.d(TAG, "Listing directory: " + dir.getAbsolutePath() + " (" + files.length + " items)");
                 for (File f : files) {
-                    // Skip if cannot read (though listFiles might already filter some)
                     if (!f.canRead()) continue;
 
+                    //permission string
                     String perms = (f.isDirectory() ? "d" : "-") +
                             (f.canRead() ? "r" : "-") +
                             (f.canWrite() ? "w" : "-") +
-                            (f.canExecute() ? "x" : "-") + // 'x' might not be accurate for Android FS
-                            "------"; // Simplified permissions
+                            (f.canExecute() ? "x" : "-") +
+                            "------";
                     long size = f.length();
                     String dateStr = sdf.format(new Date(f.lastModified()));
                     String line = String.format(Locale.US, "%s 1 ftp ftp %15d %s %s\r\n",
@@ -425,17 +466,29 @@ public class ClientHandler implements Runnable {
         }
     }
 
-    // --- Connection and Directory Management ---
 
+    /**
+     * Server opens port for client to connect.
+     * Enters passive mode for data transfer.
+     * <p>
+     * This method closes any existing data connection, creates a new server socket on an
+     * available port, and sends a 227 response to the client with the server's IP address
+     * and the port number for the data connection.
+     * <p>
+     * The IP address and port are formatted as specified by the FTP protocol for the PASV command.
+     * If a valid IPv4 address cannot be obtained, a 425 error response is sent, and the
+     * data connection is closed.
+     *
+     * @throws IOException if an I/O error occurs when creating the server socket or sending the response.
+     */
     private void enterPassiveMode() throws IOException {
-        closeDataConnection(); // Close any existing connections first
+        closeDataConnection();
 
-        dataServerSocket = new ServerSocket(0); // 0 means assign any free port
+        dataServerSocket = new ServerSocket(0);
         int port = dataServerSocket.getLocalPort();
         Log.d(TAG, "Passive mode started on port: " + port);
 
         String ip = controlSocket.getLocalAddress().getHostAddress();
-        // Handle potential IPv6 addresses (though unlikely here, good practice)
         if (ip == null || ip.contains(":")) {
             Log.e(TAG, "Could not get valid IPv4 address for PASV.");
             sendResponse("425 Can't open data connection (IP Address Error).");
@@ -450,13 +503,35 @@ public class ClientHandler implements Runnable {
         sendResponse("227 Entering Passive Mode (" + ipFormatted + "," + p1 + "," + p2 + ").");
     }
 
+    /**
+     * Changes the current working directory for the FTP session.
+     *
+     * <p>This method handles the "CWD" (Change Working Directory) FTP command. It supports:
+     * <ul>
+     *     <li>Changing to the parent directory ("..").</li>
+     *     <li>Changing to the root directory ("/" or "~").</li>
+     *     <li>Changing to a specified subdirectory.</li>
+     * </ul>
+     * </p>
+     * <p>
+     * The method performs several checks:
+     * <ul>
+     *     <li>Ensures that navigation upwards ("..") does not go beyond the configured root directory.</li>
+     *     <li>Verifies that the target directory exists, is a directory, and is readable.</li>
+     * </ul>
+     * Appropriate FTP response codes (250 for success, 550 for failure) are sent back to the client.
+     * </p>
+     *
+     * @param dir The directory path to change to. This can be a relative or absolute path (relative to the current FTP session's root).
+     *            Special values like "..", "/", or "~" are also handled.
+     * @throws IOException If an I/O error occurs while interacting with the file system or sending the response.
+     */
     private void changeWorkingDirectory(String dir) throws IOException {
         File newDir;
 
         if (dir.equals("..")) {
             File current = new File(currentDir);
             File parent = current.getParentFile();
-            // Ensure we don't go above the rootDir
             if (parent != null && parent.getCanonicalPath().length() >= rootDir.length() && parent.getCanonicalPath().startsWith(rootDir)) {
                 currentDir = parent.getCanonicalPath();
                 Log.d(TAG, "CWD to parent: " + currentDir);
@@ -493,7 +568,6 @@ public class ClientHandler implements Runnable {
     }
 
 
-    // --- Utilities ---
 
     private boolean checkLoggedIn() throws IOException {
         if (!isLoggedIn) {
@@ -514,7 +588,7 @@ public class ClientHandler implements Runnable {
             }
         } catch (IOException e) {
             Log.e(TAG, "IOException while sending response: " + response, e);
-            throw e; // Re-throw to be handled by the main loop/caller
+            throw e;
         }
     }
 
