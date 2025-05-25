@@ -10,8 +10,6 @@ import java.util.concurrent.Executors;
 
 public class FTPServer {
 
-
-
     private ServerSocket serverSocket;
     private boolean running = false;
     private int port;

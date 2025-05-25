@@ -31,15 +31,21 @@ public class FtpService extends Service {
     public static final String ACTION_STOP = "com.ebook.ftp.ACTION_STOP";
 
     private FTPServer ftpServer;
+
+//    FTP server runs in separate thread to avoid blocking the main UI thread
     private Thread serverThread;
+
+//    Prevents WiFi from going to sleep mode while FTP server is running
     private WifiManager.WifiLock wifiLock;
+
+    //Keeps CPU awake
     private PowerManager.WakeLock wakeLock; // Optional, but can help further
 
     @Override
     public void onCreate() {
         super.onCreate();
         createNotificationChannel();
-        acquireLocks(); // Acquire locks when service is created
+        acquireLocks();
         Log.d(TAG, "FTP Service Created.");
     }
 
@@ -55,7 +61,6 @@ public class FtpService extends Service {
                     break;
             }
         }
-        // If the service is killed, try to restart it
         return START_STICKY;
     }
 
@@ -66,7 +71,6 @@ public class FtpService extends Service {
             return;
         }
 
-        // --- Start as Foreground Service ---
         Intent notificationIntent = new Intent(this, MainActivity.class);
         PendingIntent pendingIntent = PendingIntent.getActivity(this, 0, notificationIntent, PendingIntent.FLAG_IMMUTABLE);
 
@@ -78,7 +82,7 @@ public class FtpService extends Service {
         Notification notification = new NotificationCompat.Builder(this, CHANNEL_ID)
                 .setContentTitle("FTP Server Active")
                 .setContentText(notificationText)
-                .setSmallIcon(R.drawable.ic_launcher_foreground)
+                .setSmallIcon(R.drawable.ftp)
                 .setContentIntent(pendingIntent)
                 .setOngoing(true) // Makes it non-dismissible
                 .build();
@@ -91,18 +95,15 @@ public class FtpService extends Service {
                 String rootPath = Environment.getExternalStorageDirectory().getAbsolutePath();
                 ftpServer = new FTPServer(2121, rootPath);
                 Log.i(TAG, "Starting FTP Server on port 2121 with root: " + rootPath);
-                ftpServer.Start(); // This will block until stopped or an error occurs
+                ftpServer.Start();
                 Log.i(TAG, "FTP Server Start() method finished.");
 
             } catch (SocketException e) {
                 Log.e(TAG, "Socket was closed, server likely stopped: " + e.getMessage());
             } catch (IOException e) {
                 Log.e(TAG, "FTP Server failed to start or run: " + e.getMessage(), e);
-                // Optionally send a broadcast or update UI
             } finally {
                 Log.d(TAG, "FTP Server thread ending, cleaning up service.");
-                // Ensure service stops itself if the server stops unexpectedly
-                // stopSelf(); // Be careful with this, might stop intended runs
             }
         });
         serverThread.start();
@@ -111,7 +112,7 @@ public class FtpService extends Service {
 
     private void stopFtpServer() {
         Log.d(TAG, "Attempting to stop FTP Server.");
-        new Thread(() -> { // Run stop on a new thread to avoid blocking UI/Service thread
+        new Thread(() -> {
             try {
                 if (ftpServer != null && ftpServer.isRunning()) {
                     ftpServer.stop();
@@ -136,12 +137,18 @@ public class FtpService extends Service {
     }
 
 
+    /**
+     * Creates a notification channel for the FTP server service.
+     * This method is only executed if the Android version is Oreo (API level 26) or higher,
+     * as notification channels were introduced in that version.
+     * The channel is configured with a low importance to minimize user interruption.
+     */
     private void createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             NotificationChannel serviceChannel = new NotificationChannel(
                     CHANNEL_ID,
                     "FTP Server Service Channel",
-                    NotificationManager.IMPORTANCE_LOW // Use LOW to avoid sound/vibration
+                    NotificationManager.IMPORTANCE_LOW
             );
             NotificationManager manager = getSystemService(NotificationManager.class);
             if (manager != null) {
@@ -150,9 +157,30 @@ public class FtpService extends Service {
         }
     }
 
-    // Acquire Wi-Fi and (optionally) CPU Wake locks
+    /**
+     * Acquires the necessary system locks to ensure the FTP server can run reliably
+     * in the background.
+     *
+     * This method attempts to acquire:
+     * 1. **Wi-Fi Lock (WIFI_MODE_FULL_HIGH_PERF):**
+     *    - Prevents the Wi-Fi radio from turning off or going into a low-power state
+     *      while the FTP server is active. This is crucial for maintaining network
+     *      connectivity.
+     *    - The lock is set to not be reference-counted, meaning its lifecycle is
+     *      managed explicitly by this service (acquired here and released in `releaseLocks`).
+     * 2. **Partial Wake Lock (PARTIAL_WAKE_LOCK):**
+     *    - Ensures that the CPU continues to run even if the screen turns off.
+     *      This allows the FTP server to continue processing requests and transferring
+     *      files in the background.
+     *    - Similar to the Wi-Fi lock, it's not reference-counted.
+     *    - **Note:** The `wakeLock.acquire()` call is currently commented out. This
+     *      suggests it might be acquired conditionally elsewhere or was part of a
+     *      previous implementation. If background operation without the screen on is
+     *      required, this line should be uncommented.
+     *
+     * Logs are generated to indicate the success or failure of acquiring each lock.
+     */
     private void acquireLocks() {
-        // Wi-Fi Lock
         WifiManager wifiManager = (WifiManager) getApplicationContext().getSystemService(Context.WIFI_SERVICE);
         if (wifiManager != null) {
             wifiLock = wifiManager.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "FtpService:WifiLock");
@@ -163,12 +191,11 @@ public class FtpService extends Service {
             Log.w(TAG, "WifiManager not available.");
         }
 
-        // Partial Wake Lock (Optional - keeps CPU running, use with caution)
         PowerManager powerManager = (PowerManager) getSystemService(Context.POWER_SERVICE);
         if (powerManager != null) {
             wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "FtpService:WakeLock");
             wakeLock.setReferenceCounted(false);
-            // wakeLock.acquire(); // Uncomment if you find you need it
+            // wakeLock.acquire();
             // Log.d(TAG, "WakeLock acquired.");
         }
     }
@@ -190,9 +217,8 @@ public class FtpService extends Service {
     @Override
     public void onDestroy() {
         Log.d(TAG, "FTP Service Destroyed.");
-        // Ensure server is stopped and locks are released
         if (ftpServer != null && ftpServer.isRunning()) {
-            stopFtpServer(); // Try a clean stop
+            stopFtpServer();
         }
         releaseLocks();
         super.onDestroy();
@@ -201,7 +227,6 @@ public class FtpService extends Service {
     @Nullable
     @Override
     public IBinder onBind(Intent intent) {
-        // We don't provide binding, so return null
         return null;
     }
 }
