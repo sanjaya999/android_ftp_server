@@ -9,6 +9,7 @@ import android.os.Bundle;
 import android.os.Environment;
 import android.provider.Settings;
 import android.util.Log;
+import android.view.View;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -16,6 +17,7 @@ import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.widget.AppCompatButton;
+import androidx.cardview.widget.CardView;
 import androidx.core.content.ContextCompat;
 
 import java.io.File;
@@ -29,8 +31,9 @@ public class MainActivity extends AppCompatActivity {
     TextView showText;
     AppCompatButton startBtn;
     AppCompatButton stopBtn;
+    CardView serverInfoCard;
 
-    // Modern way to handle permission requests
+
     private ActivityResultLauncher<String[]> requestPermissionLauncher;
 
     @Override
@@ -41,8 +44,8 @@ public class MainActivity extends AppCompatActivity {
         startBtn = findViewById(R.id.start_server);
         stopBtn = findViewById(R.id.end_server);
         showText = findViewById(R.id.show_ip);
+        serverInfoCard = findViewById(R.id.server_info_card);
 
-        // --- Setup Permission Launcher ---
         requestPermissionLauncher = registerForActivityResult(
                 new ActivityResultContracts.RequestMultiplePermissions(),
                 permissions -> {
@@ -55,23 +58,22 @@ public class MainActivity extends AppCompatActivity {
                     }
                     if (allGranted) {
                         Log.d(TAG, "All required permissions granted.");
-                        checkAndRequestAllFilesAccess(); // Now check for All Files Access
+                        checkAndRequestAllFilesAccess();
                     } else {
                         Toast.makeText(this, "Please grant all required permissions.", Toast.LENGTH_LONG).show();
-                        // You might want to disable buttons or show a more specific message
                     }
                 });
 
-        // --- Request Permissions on Start ---
         requestNeededPermissions();
 
-        // --- Button Click Listeners ---
         startBtn.setOnClickListener(view -> {
             Log.d(TAG, "Start button clicked.");
             // Ensure permissions before starting
             if (hasRequiredPermissions()) {
                 Intent startIntent = new Intent(this, FtpService.class);
                 startIntent.setAction(FtpService.ACTION_START);
+                serverInfoCard.setVisibility(View.VISIBLE);
+
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                     startForegroundService(startIntent); // Use this for Android 8+
                 } else {
@@ -89,7 +91,7 @@ public class MainActivity extends AppCompatActivity {
             Intent stopIntent = new Intent(this, FtpService.class);
             stopIntent.setAction(FtpService.ACTION_STOP);
             startService(stopIntent); // No need for startForegroundService to stop
-            showText.setText(""); // Clear UI
+            serverInfoCard.setVisibility(View.GONE);
             Toast.makeText(this, "FTP Server Stopping...", Toast.LENGTH_SHORT).show();
         });
 
@@ -124,6 +126,19 @@ public class MainActivity extends AppCompatActivity {
     }
 
 
+    /**
+     * Requests necessary permissions from the user.
+     *
+     * This method first identifies which of the "needed" permissions (as defined by `getNeededPermissions()`)
+     * have not yet been granted by the user.
+     *
+     * If there are any ungranted standard permissions, it launches a system dialog to request them.
+     *
+     * If all standard permissions are already granted, it proceeds to check and request
+     * the "All Files Access" permission (if applicable and not granted).
+     *
+     * Logging is used to track the permission request process.
+     */
     private void requestNeededPermissions() {
         List<String> permissionsToRequest = new ArrayList<>();
         List<String> neededPermissions = getNeededPermissions();
@@ -139,24 +154,37 @@ public class MainActivity extends AppCompatActivity {
             requestPermissionLauncher.launch(permissionsToRequest.toArray(new String[0]));
         } else {
             Log.d(TAG, "Standard permissions already granted, checking All Files Access.");
-            checkAndRequestAllFilesAccess(); // If standard perms exist, check the special one
+            checkAndRequestAllFilesAccess();
         }
     }
 
+    /**
+     * Determines and returns a list of permissions required by the application based on the Android API level.
+     *
+     * <p>The permissions included are:
+     * <ul>
+     *   <li>{@link Manifest.permission#POST_NOTIFICATIONS}: Required on Android 13 (API level 33) and above
+     *       for the application to post notifications.</li>
+     *   <li>{@link Manifest.permission#WAKE_LOCK}: Always required to prevent the processor from sleeping
+     *       or the screen from dimming.</li>
+     *   <li>{@link Manifest.permission#READ_EXTERNAL_STORAGE}: Required on Android versions below
+     *       Android 11 (API level 30) to read from external storage.</li>
+     *   <li>{@link Manifest.permission#WRITE_EXTERNAL_STORAGE}: Required on Android versions below
+     *       Android 11 (API level 30) to write to external storage.</li>
+     * </ul>
+     *
+     * @return A {@link List} of {@link String} objects, where each string represents a permission
+     *         that the application needs to function correctly.
+     */
     private List<String> getNeededPermissions() {
         List<String> needed = new ArrayList<>();
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             needed.add(Manifest.permission.POST_NOTIFICATIONS);
-            // On Tiramisu+, you might still need media permissions if NOT using All Files Access
-            // but since we *are* aiming for All Files Access, POST_NOTIFICATIONS is key.
         }
 
-        // We aim for All Files Access, but WAKE_LOCK is separate.
         needed.add(Manifest.permission.WAKE_LOCK);
 
-        // You no longer need READ/WRITE_EXTERNAL_STORAGE if you get MANAGE_EXTERNAL_STORAGE
-        // but it doesn't hurt to ask on older versions.
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
             needed.add(Manifest.permission.READ_EXTERNAL_STORAGE);
             needed.add(Manifest.permission.WRITE_EXTERNAL_STORAGE);
@@ -166,6 +194,30 @@ public class MainActivity extends AppCompatActivity {
     }
 
 
+    /**
+     * Checks if the app has "All Files Access" (MANAGE_EXTERNAL_STORAGE) permission on Android R (API 30) and above.
+     * If the permission is not granted, it guides the user to the system settings to grant it.
+     *
+     * This permission is required for apps that need broad access to shared storage.
+     *
+     * The method performs the following steps:
+     * 1. Checks if the current Android version is R (API 30) or higher. If not, the method does nothing.
+     * 2. If on Android R or higher, it checks if `Environment.isExternalStorageManager()` returns true,
+     *    which indicates that the app already has the "All Files Access" permission.
+     * 3. If the permission is not granted:
+     *    a. Logs a message indicating that the permission is being requested.
+     *    b. Displays a Toast message to the user explaining the need for the permission.
+     *    c. Attempts to launch the specific app settings screen for "All Files Access" permission
+     *       using `Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION`.
+     *    d. If launching the app-specific settings fails (e.g., on some custom ROMs or due to unforeseen issues),
+     *       it falls back to launching the general "Manage All Files Access" settings screen using
+     *       `Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION`.
+     * 4. If the permission is already granted, it logs a message indicating that.
+     *
+     * Note: The user will be taken out of the app to the system settings screen. The app should handle
+     * the result of this permission request in `onActivityResult` or by re-checking the permission status
+     * when the app resumes (e.g., in `onResume`).
+     */
     private void checkAndRequestAllFilesAccess() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             if (!Environment.isExternalStorageManager()) {
@@ -188,14 +240,11 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    // You might need to override onResume to re-check permissions if the user
-    // comes back from settings.
+
     @Override
     protected void onResume() {
         super.onResume();
-        updateIpAddress(); // Update IP on resume
-        // Optionally re-check permissions here
+        updateIpAddress();
     }
 
-    // You no longer need onRequestPermissionsResult if using ActivityResultLauncher
 }

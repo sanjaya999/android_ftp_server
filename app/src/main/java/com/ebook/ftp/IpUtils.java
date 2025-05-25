@@ -6,6 +6,9 @@ import java.net.SocketException;
 import java.util.Collections;
 import java.util.List;
 
+/**
+ * Utility class for IP address related operations.
+ */
 public class IpUtils {
     public static String getLocalIpAddress(){
         try{
