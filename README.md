@@ -83,6 +83,4 @@ com.ebook.ftp/
 
 This application uses fixed credentials (username: "admin", password: "admin") and does not implement encryption. It is intended for use on trusted local networks only and should not be exposed to the internet.
 
-## License
 
-This project is proprietary software. All rights reserved.
