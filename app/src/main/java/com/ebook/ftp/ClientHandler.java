@@ -152,11 +152,13 @@ public class ClientHandler implements Runnable {
                             receiveFile(argument);
                             break;
 
+                            //Quit
                         case "QUIT":
                             sendResponse("221 Goodbye.");
                             controlSocket.close();
                             return; // Exit the run method
 
+                        //features
                         case "FEAT":
                             sendResponse("211-Features:");
                             sendResponse(" UTF8");
@@ -167,20 +169,22 @@ public class ClientHandler implements Runnable {
                             break;
 
                         case "TYPE":
-                            // We mainly support Binary (I), but acknowledge A too.
+                            // I is image/binary
                             if (argument.equalsIgnoreCase("I")) {
                                 sendResponse("200 Type set to I (Binary)");
-                            } else if (argument.equalsIgnoreCase("A")) {
+                            } else if (argument.equalsIgnoreCase("A")) {//ASCII
                                 sendResponse("200 Type set to A (ASCII)");
                             } else {
                                 sendResponse("504 Type not supported.");
                             }
                             break;
 
+                            //SYSTEM / ask about file system and os
                         case "SYST":
                             sendResponse("215 UNIX Type: L8");
                             break;
 
+                            //OPTIONS
                         case "OPTS":
                             if (argument.toUpperCase().startsWith("UTF8 ON")) {
                                 sendResponse("200 UTF8 set to on");
@@ -189,11 +193,13 @@ public class ClientHandler implements Runnable {
                             }
                             break;
 
+                            //file length
                         case "SIZE":
                             if (!checkLoggedIn()) break;
                             handleSize(argument);
                             break;
 
+                            //No operations
                         case "NOOP":
                             sendResponse("200 NOOP command successful");
                             break;
@@ -227,6 +233,26 @@ public class ClientHandler implements Runnable {
         }
     }
 
+    /**
+     * Builds a File object from a given path, ensuring it stays within the defined root directory.
+     *
+     * <p>This method handles both absolute and relative paths:
+     * <ul>
+     *   <li>Absolute paths (starting with "/") are resolved relative to the {@code rootDir}.
+     *   <li>Relative paths are resolved relative to the {@code currentDir}.
+     * </ul>
+     *
+     * <p>Crucially, it performs a security check to prevent path traversal attacks.
+     * If the resolved canonical path of the target file falls outside the {@code rootDir},
+     * an {@link IOException} is thrown.
+     *
+     * @param path The path string to build the File from. Can be absolute or relative.
+     * @return A {@link File} object representing the resolved path.
+     * @throws IOException If an I/O error occurs during path resolution or if the
+     *                     resolved path is outside the allowed root directory.
+     *                     This includes cases where the path is invalid or attempts
+     *                     to access files outside the intended scope.
+     */
     private File buildFile(String path) throws IOException {
         String effectivePath;
         File baseDir;
